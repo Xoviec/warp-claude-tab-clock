@@ -1,0 +1,44 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  hooks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: command -v jq >/dev/null || (sudo apt-get update && sudo apt-get install -y jq) || brew install jq
+      - name: Run hook tests
+        run: ./tests/test-hooks.sh
+
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Manifests are valid JSON
+        run: |
+          for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json; do
+            jq -e . "$f" > /dev/null && echo "ok  $f"
+          done
+      - name: Hook commands point at files that exist
+        run: |
+          jq -r '.hooks[][].hooks[].command' hooks/hooks.json \
+            | sed 's|"${CLAUDE_PLUGIN_ROOT}"/||' \
+            | while read -r script; do
+                test -x "$script" && echo "ok  $script" || { echo "missing or not executable: $script"; exit 1; }
+              done
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - run: shellcheck scripts/*.sh setup.sh teardown.sh tests/*.sh

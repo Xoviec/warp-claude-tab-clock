@@ -1,0 +1,25 @@
+{
+  "description": "Live clock in the Warp tab title",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/warp-tab-time.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/warp-tab-autoname.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-marketplace.json",
+  "name": "xoviec",
+  "description": "Claude Code plugins by Xoviec",
+  "owner": {
+    "name": "Adrian Gasiorek",
+    "url": "https://github.com/Xoviec"
+  },
+  "plugins": [
+    {
+      "name": "warp-tab-clock",
+      "source": "./",
+      "description": "Live clock in the Warp tab title: the time Claude last replied, plus a label for the session",
+      "category": "productivity",
+      "tags": ["warp", "terminal", "tab-title"]
+    }
+  ]
+}

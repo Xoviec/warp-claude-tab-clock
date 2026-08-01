@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "warp-tab-clock",
+  "displayName": "Warp Tab Clock",
+  "description": "Live clock in the Warp tab title: the time Claude last replied, plus a label for the session",
+  "version": "1.0.0",
+  "author": {
+    "name": "Adrian Gasiorek",
+    "url": "https://github.com/Xoviec"
+  },
+  "homepage": "https://github.com/Xoviec/warp-claude-tab-clock",
+  "repository": "https://github.com/Xoviec/warp-claude-tab-clock",
+  "license": "MIT",
+  "keywords": ["warp", "terminal", "tab-title", "productivity"],
+  "userConfig": {
+    "default_label": {
+      "type": "string",
+      "title": "Default tab label",
+      "description": "Shown when a tab has no pinned or auto-derived name. Leave empty to fall back to the project directory name."
+    },
+    "autoname": {
+      "type": "boolean",
+      "title": "Derive labels from the first prompt",
+      "description": "The first prompt of a session can name a client or a project, and the tab title is visible in screenshots, screen shares and Warp's history database. Turn this off to show only pinned names, the default label, or the project directory.",
+      "default": true
+    }
+  }
+}
