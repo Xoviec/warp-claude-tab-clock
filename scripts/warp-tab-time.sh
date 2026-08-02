@@ -6,7 +6,7 @@
 #
 # Label resolution, first hit wins:
 #   1. <state>/<WARP_TERMINAL_SESSION_UUID>       — pinned with `tabname`
-#   2. <state>/<WARP_TERMINAL_SESSION_UUID>.auto  — session's first prompt
+#   2. <state>/<WARP_TERMINAL_SESSION_UUID>.auto  — derived from prompt + branch
 #   3. <state>/default                            — global fallback file
 #   4. $CLAUDE_PLUGIN_OPTION_DEFAULT_LABEL        — plugin configuration
 #   5. basename of the project directory          — original behaviour

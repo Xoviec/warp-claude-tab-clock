@@ -3,7 +3,7 @@
   "name": "warp-tab-clock",
   "displayName": "Warp Tab Clock",
   "description": "Live clock in the Warp tab title: the time Claude last replied, plus a label for the session",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": {
     "name": "Adrian Gasiorek",
     "url": "https://github.com/Xoviec"

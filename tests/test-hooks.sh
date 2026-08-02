@@ -154,5 +154,83 @@ CLAUDE_PLUGIN_OPTION_AUTONAME=false run_auto '{"session_id":"s1","prompt":"Somet
 assert_no_file "the autoname plugin option opts out" "$auto_file"
 
 echo
+echo "warp-tab-autoname.sh — kind and ref"
+
+label_line() { head -1 "$auto_file" 2>/dev/null | cut -f2- ; }
+ref_line()   { sed -n '2p' "$auto_file" 2>/dev/null ; }
+
+reset_names
+run_auto '{"session_id":"s1","prompt":"zrób code review #2121"}' >/dev/null
+assert_eq "kind plus ref from the prompt" "Code review #2121" "$(label_line)"
+assert_eq "the ref is kept on the second line" "#2121" "$(ref_line)"
+
+reset_names
+run_auto '{"session_id":"s1","prompt":"review PROJ-123 before merge"}' >/dev/null
+assert_eq "an issue key works as a ref" "Code review PROJ-123" "$(label_line)"
+
+reset_names
+run_auto '{"session_id":"s1","prompt":"dodaj dark mode"}' >/dev/null
+assert_eq "kind prefixes the prompt when there is no ref" "Feat: dodaj dark mode" "$(label_line)"
+
+reset_names
+run_auto '{"session_id":"s1","prompt":"Fix the invoice export"}' >/dev/null
+assert_eq "a prompt that already names the kind is not prefixed" "Fix the invoice export" "$(label_line)"
+
+reset_names
+run_auto '{"session_id":"s1","prompt":"co z #77"}' >/dev/null
+assert_eq "a ref the prompt spells out is not repeated" "co z #77" "$(label_line)"
+
+# Renaming follows the ref, not every prompt.
+reset_names
+run_auto '{"session_id":"s1","prompt":"zrób code review #2121"}' >/dev/null
+run_auto '{"session_id":"s1","prompt":"a teraz napraw #2321"}' >/dev/null
+assert_eq "a new ref mid-session renames" "Fix #2321" "$(label_line)"
+
+run_auto '{"session_id":"s1","prompt":"dopisz jeszcze test"}' >/dev/null
+assert_eq "a prompt without a ref leaves the label alone" "Fix #2321" "$(label_line)"
+
+run_auto '{"session_id":"s1","prompt":"jeszcze raz #2321"}' >/dev/null
+assert_eq "the same ref again does not rename" "Fix #2321" "$(label_line)"
+
+echo
+echo "warp-tab-autoname.sh — ref from the git branch"
+
+if command -v git >/dev/null 2>&1; then
+    REPO="$TMP/repo"
+    mkdir -p "$REPO"
+    git init -q -b fix/2321-crash "$REPO" 2>/dev/null
+
+    reset_names
+    out="$(CLAUDE_PROJECT_DIR="$REPO" run_auto '{"session_id":"s1","prompt":"napraw ten bug"}')"
+    assert_eq "the branch supplies the ref the prompt lacks" "Fix #2321" "$(label_line)"
+
+    git -C "$REPO" checkout -q -b feat/insights-flash 2>/dev/null
+    reset_names
+    CLAUDE_PROJECT_DIR="$REPO" run_auto '{"session_id":"s1","prompt":"dodaj dark mode"}' >/dev/null
+    assert_eq "a branch without a number yields no ref" "Feat: dodaj dark mode" "$(label_line)"
+
+    git -C "$REPO" checkout -q -b feat/v2-migration 2>/dev/null
+    reset_names
+    CLAUDE_PROJECT_DIR="$REPO" run_auto '{"session_id":"s1","prompt":"dodaj dark mode"}' >/dev/null
+    assert_eq "a single digit in the branch is not a ref" "Feat: dodaj dark mode" "$(label_line)"
+
+    git -C "$REPO" checkout -q -b bugfix/proj-77-crash 2>/dev/null
+    reset_names
+    CLAUDE_PROJECT_DIR="$REPO" run_auto '{"session_id":"s1","prompt":"napraw ten bug"}' >/dev/null
+    assert_eq "an issue key in the branch is upcased" "Fix PROJ-77" "$(label_line)"
+
+    # Switching branch is a change of subject, even mid-session.
+    git -C "$REPO" checkout -q -b fix/2321-crash 2>/dev/null
+    CLAUDE_PROJECT_DIR="$REPO" run_auto '{"session_id":"s1","prompt":"napraw ten bug"}' >/dev/null
+    assert_eq "a branch switch mid-session renames" "Fix #2321" "$(label_line)"
+else
+    skipped "ref from the git branch" "git not installed"
+fi
+
+reset_names
+run_auto '{"session_id":"s1","prompt":"napraw ten bug"}' >/dev/null
+assert_eq "outside a repository the prompt still names the tab" "Fix: napraw ten bug" "$(label_line)"
+
+echo
 printf '%s passed, %s failed, %s skipped\n' "$pass" "$fail" "$skip"
 [ "$fail" -eq 0 ]

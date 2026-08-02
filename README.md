@@ -75,7 +75,7 @@ The label is resolved on every reply, first match wins:
 | Priority | Source | Set by |
 |---|---|---|
 | 1 | `<state>/<tab-uuid>` | `tabname "My label"` |
-| 2 | `<state>/<tab-uuid>.auto` | first prompt of the session |
+| 2 | `<state>/<tab-uuid>.auto` | what the session is about, derived automatically |
 | 3 | `<state>/default` | you, for a global fallback |
 | 4 | the plugin's **Default tab label** option | `/plugin configure warp-tab-clock@xoviec` |
 | 5 | project directory name | nothing — this is the fallback |
@@ -104,16 +104,39 @@ echo "New label" > ~/.claude/warp-tab-name/$WARP_TERMINAL_SESSION_UUID
 
 ### Auto-naming
 
-A `UserPromptSubmit` hook takes the **first prompt of each session**, collapses
-it to one line and truncates it to 28 characters. Later prompts in the same
-session do not rename the tab — otherwise the label would flicker on every
-message. Starting a new Claude session in the same tab does rename it. Prompts
-beginning with `/` are skipped, because `/tldr` describes a tab poorly.
+A `UserPromptSubmit` hook names the tab after the work, not after the prompt
+verbatim: `Code review #2121`, `Fix #2321`. Two things go into it.
 
-**That prompt ends up on your screen.** Tab titles show in screenshots, screen
-shares and recordings, and Warp keeps them in its own history database, so the
-first line you type to Claude outlives the session. If that first line tends to
-name a client or an unreleased project, turn auto-naming off:
+**The kind** comes from the verbs in the prompt — review, fix, refactor, test,
+docs, release, or feature — recognised in English and Polish. **The ref** is a
+`#2121` or an issue key like `PROJ-123` in the prompt; when the prompt has none,
+it is parsed out of the current git branch, so `fix/2321-crash` also gives
+`#2321` and `bugfix/proj-77-x` gives `PROJ-77`.
+
+| Prompt | Branch | Label |
+|---|---|---|
+| `zrób code review #2121` | any | `Code review #2121` |
+| `napraw ten bug` | `fix/2321-crash` | `Fix #2321` |
+| `dodaj dark mode` | `main` | `Feat: dodaj dark mode` |
+| `co tu się dzieje` | `main` | `co tu się dzieje` |
+
+With no ref the kind prefixes the prompt, unless the prompt already says it —
+`Fix the invoice export` is not turned into `Fix: Fix the invoice export`. With
+neither, the prompt stands on its own, collapsed to one line and truncated to 28
+characters. Prompts beginning with `/` are skipped, because `/tldr` describes a
+tab poorly.
+
+**Renaming follows the ref.** The label is set on the first prompt of a session
+and then replaced only when the ref changes — you move to another ticket, or
+switch branch. A follow-up like "add a test" carries no ref and leaves the title
+alone, so it does not flicker on every message. Starting a new Claude session in
+the same tab always renames.
+
+**Whatever is derived ends up on your screen.** Tab titles show in screenshots,
+screen shares and recordings, and Warp keeps them in its own history database, so
+a label outlives the session that produced it. A prompt with no recognised kind
+and no ref is used verbatim, so if what you type tends to name a client or an
+unreleased project, turn auto-naming off:
 
 ```
 /plugin configure warp-tab-clock@xoviec    # "Derive labels from the first prompt" → off
@@ -133,7 +156,7 @@ Two Claude Code hooks, no daemon and no polling:
 - **`Stop` → `warp-tab-time.sh`** runs after every assistant turn, resolves the
   label, and emits `OSC 0` (`ESC ] 0 ; <title> BEL`).
 - **`UserPromptSubmit` → `warp-tab-autoname.sh`** records a label derived from
-  the session's first prompt.
+  the prompt and the current git branch.
 
 Claude Code cannot write to `/dev/tty` from a hook subprocess, so the escape
 sequence is returned as JSON instead:
