@@ -7,14 +7,24 @@
 set -euo pipefail
 
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-HOOKS_DIR="$CLAUDE_DIR/hooks"
-SETTINGS="$CLAUDE_DIR/settings.json"
 ZSHRC="${ZDOTDIR:-$HOME}/.zshrc"
-NAME_DIR="$CLAUDE_DIR/warp-tab-name"
+
+# v1 installed into $HOME/.claude and wrote that path into settings.json
+# literally, whatever CLAUDE_CONFIG_DIR happens to say today. Sweeping only the
+# configured directory would report success while leaving v1 live, so both are
+# cleaned when they differ.
+CLAUDE_DIRS=("$CLAUDE_DIR")
+if [ "$CLAUDE_DIR" != "$HOME/.claude" ]; then
+    CLAUDE_DIRS+=("$HOME/.claude")
+fi
 
 info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 
 # --- v1 leftovers -----------------------------------------------------------
+for dir in "${CLAUDE_DIRS[@]}"; do
+HOOKS_DIR="$dir/hooks"
+SETTINGS="$dir/settings.json"
+
 if [ -f "$HOOKS_DIR/warp-tab-time.sh" ] || [ -f "$HOOKS_DIR/warp-tab-autoname.sh" ]; then
     info "Removing v1 hook scripts from $HOOKS_DIR"
     rm -f "$HOOKS_DIR/warp-tab-time.sh" "$HOOKS_DIR/warp-tab-autoname.sh"
@@ -31,10 +41,13 @@ shutil.copy2(path, path + ".bak-warp-tab-clock-uninstall")
 with open(path) as fh:
     data = json.load(fh)
 
-targets = {
-    "$HOME/.claude/hooks/warp-tab-time.sh",
-    "$HOME/.claude/hooks/warp-tab-autoname.sh",
-}
+# Matched by script name rather than by full path: the entry holds whatever
+# $HOME expanded to on the machine that installed it.
+targets = ("warp-tab-time.sh", "warp-tab-autoname.sh")
+def ours(hook):
+    cmd = hook.get("command") or ""
+    return any(name in cmd for name in targets)
+
 removed_ours = False
 hooks = data.get("hooks", {})
 for event in ("Stop", "UserPromptSubmit"):
@@ -44,7 +57,7 @@ for event in ("Stop", "UserPromptSubmit"):
     kept = []
     for entry in entries:
         before = entry.get("hooks", [])
-        after = [h for h in before if h.get("command") not in targets]
+        after = [h for h in before if not ours(h)]
         if len(after) != len(before):
             removed_ours = True
         entry["hooks"] = after
@@ -74,6 +87,7 @@ PY
         info "python3 not found — remove the warp-tab-*.sh hook entries from $SETTINGS by hand"
     fi
 fi
+done
 
 # --- shell block ------------------------------------------------------------
 if [ -f "$ZSHRC" ] && grep -qE '^# >>> warp-(claude-)?tab-clock >>>$' "$ZSHRC"; then
@@ -86,8 +100,11 @@ if [ -f "$ZSHRC" ] && grep -qE '^# >>> warp-(claude-)?tab-clock >>>$' "$ZSHRC"; 
     ' "$ZSHRC.bak-warp-tab-clock-uninstall" > "$ZSHRC"
 fi
 
-info "Removing saved tab names ($NAME_DIR)"
-rm -rf "$NAME_DIR"
+for dir in "${CLAUDE_DIRS[@]}"; do
+    [ -d "$dir/warp-tab-name" ] || continue
+    info "Removing saved tab names ($dir/warp-tab-name)"
+    rm -rf "$dir/warp-tab-name"
+done
 
 cat <<'DONE'
 
