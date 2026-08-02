@@ -14,7 +14,14 @@
 # comes from the verbs in the prompt and the ref from a #number or issue key in
 # the prompt, falling back to one parsed out of the current git branch. Without a
 # ref the kind still prefixes the prompt ("Feat: dodaj dark mode"); without either
-# the prompt stands on its own, which is the original behaviour.
+# the prompt stands on its own.
+#
+# That last case is the common one outside ticket-driven work, and a raw prompt
+# is a poor tab title — "przejrzyj szybko moje repo fe" says how it was asked,
+# not what it is about. So the regex label is only the placeholder: a one-shot
+# headless Claude then rewrites it into an actual topic ("Przegląd repo FE"), in
+# the background, and the tab settles a few seconds into the first answer. See
+# the summariser at the foot of this file.
 #
 # Renaming rule: the label is set once per Claude session, then replaced only when
 # the ref changes — a new ticket, or a branch switch. Prompts that carry no ref
@@ -32,7 +39,14 @@ set -u
 
 NAME_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/warp-tab-name"
 MAX_LEN=28
+LLM_MODEL="${WARP_TAB_CLOCK_LLM_MODEL:-haiku}"
+LLM_TIMEOUT="${WARP_TAB_CLOCK_LLM_TIMEOUT:-25}"
 
+# The summariser spawns a headless Claude, and that Claude runs this very hook —
+# and the Stop hook with it. Unguarded, the first forks without end and the
+# second stamps the tab with the child's own directory. Both scripts bail on
+# this marker, which the spawn sets on the child's environment.
+[ "${WARP_TAB_CLOCK_CHILD:-}" = "1" ] && exit 0
 [ "${WARP_TAB_CLOCK_NO_AUTONAME:-}" = "1" ] && exit 0
 [ "${CLAUDE_PLUGIN_OPTION_AUTONAME:-true}" = "false" ] && exit 0
 
@@ -70,6 +84,9 @@ out="$(printf '%s' "$input" | jq -r --argjson n "$MAX_LEN" --arg branch "$branch
       elif test("\\bdocs?\\b|\\breadme\\b|dokumentacj|udokumentuj|opisz"; "i") then "Docs"
       elif test("\\bdeploy(ment)?\\b|\\brelease\\b|wdr[oó][żz]|wydanie|opublikuj"; "i") then "Release"
       elif test("\\badds?\\b|\\bimplement(s|ed|ing)?\\b|\\bfeat(ure)?\\b|dodaj|zaimplementuj|stw[oó]rz|napisz|zr[oó]b"; "i") then "Feat"
+      # Last of the kinds: "sprawdź czy X się nie sypie" is a Fix, and only a
+      # prompt that matched nothing above is plain analysis.
+      elif test("\\banaly[sz]|\\binspect\\b|przeanalizuj|przejrz(yj|e[ćc])|zbadaj|sprawd[źz]"; "i") then "Analysis"
       else "" end;
 
     # "#2121" first, then an uppercase issue key like PROJ-123. Requiring digits
@@ -110,14 +127,15 @@ out="$(printf '%s' "$input" | jq -r --argjson n "$MAX_LEN" --arg branch "$branch
                elif $ref != "" and $own == "" then $ref + " " + $text
                else $text end) as $label
             | (if ($label | length) > $n then $label[0:$n] + "…" else $label end) as $name
-            | $sid + "\t" + $name + "\n" + $ref
+            | $sid + "\t" + $name + "\n" + $ref + "\n" + $text
           end
       end' 2>/dev/null)"
 [ -n "$out" ] || exit 0
 
-line="${out%%$'\n'*}"
-ref="${out#*$'\n'}"
-[ "$ref" = "$out" ] && ref=""
+# Three lines out, two lines stored: the collapsed prompt is what the summariser
+# below is handed, and it has no business in the file the Stop hook reads.
+line=""; ref=""; text=""
+{ IFS= read -r line; IFS= read -r ref; IFS= read -r text; } <<< "$out"
 sid="${line%%$'\t'*}"
 
 # Within one Claude session the label only follows a change of ticket. A new
@@ -132,4 +150,74 @@ fi
 
 mkdir -p "$NAME_DIR" || exit 0
 printf '%s\n%s\n' "$line" "$ref" > "$target" 2>/dev/null
+
+# --- the topic, from the model ------------------------------------------------
+#
+# Everything above is a placeholder built out of the prompt's own words. This
+# turns it into what the session is actually about.
+#
+# It runs only where a label was just written — once per session, and again on a
+# change of ticket — so a session costs one small model call, not one per turn.
+# It runs detached because the call takes a few seconds and a UserPromptSubmit
+# hook holds the turn for as long as it lasts; the tab renames itself partway
+# through the first answer instead.
+[ "${WARP_TAB_CLOCK_NO_LLM_NAME:-}" = "1" ] && exit 0
+[ "${CLAUDE_PLUGIN_OPTION_LLM_NAME:-true}" = "false" ] && exit 0
+[ -n "$text" ] || exit 0
+command -v claude >/dev/null 2>&1 || exit 0
+
+(
+    # A neutral working directory keeps the child off the project's own settings
+    # and CLAUDE.md — cheaper, and one less way for a project hook to recurse.
+    cd "$NAME_DIR" 2>/dev/null || exit 0
+
+    answer=""
+    tmp="$target.llm.$$"
+    # The state directory is not swept by anything, so a subshell killed before
+    # its own cleanup would leave this behind for good.
+    trap 'rm -f "$tmp" 2>/dev/null' EXIT INT TERM
+
+    # WARP_TAB_CLOCK_CHILD stops this hook in the child. Clearing the tab uuid
+    # is the second line of defence, for the case that guard cannot cover: an
+    # older copy of this script still installed as the plugin, which has never
+    # heard of the marker. Without a uuid it resolves the state file to
+    # "default.auto", which nothing reads, instead of the live tab's.
+    WARP_TAB_CLOCK_CHILD=1 WARP_TERMINAL_SESSION_UUID= claude -p --model "$LLM_MODEL" \
+        "Name the terminal tab for this coding session. Reply with ONLY the topic: 2-4 words, at most $MAX_LEN characters, in the language the request is written in, no quotes and no trailing period. Request: $text" \
+        > "$tmp" 2>/dev/null &
+    child=$!
+    ( sleep "$LLM_TIMEOUT"; kill "$child" 2>/dev/null ) &
+    watchdog=$!
+    wait "$child" 2>/dev/null; status=$?
+    kill "$watchdog" 2>/dev/null
+
+    answer="$(cat "$tmp" 2>/dev/null)"
+    rm -f "$tmp" 2>/dev/null
+
+    # The CLI reports "Not logged in", and its like, on stdout and leaves,
+    # so silencing stderr is not enough to keep an error out of the tab title.
+    # A non-zero status also covers the watchdog's kill.
+    [ "$status" -eq 0 ] || exit 0
+
+    # jq again for the truncation, for the same reason as above: it counts
+    # characters. A refusal or an apology arrives as several lines, so only the
+    # first line with anything on it is taken, and stray quoting is dropped.
+    topic="$(printf '%s' "$answer" | jq -Rrs --argjson n "$MAX_LEN" '
+        split("\n") | map(select(test("[^[:space:]]"))) | (.[0] // "")
+        | gsub("[\"“”`]"; "")
+        | gsub("[[:space:]]+"; " ") | sub("^ "; "") | sub(" $"; "") | sub("[.]$"; "")
+        | if length > $n then .[0:$n] + "…" else . end' 2>/dev/null)"
+    [ -n "$topic" ] || exit 0
+
+    # Several seconds have passed, and the tab may have moved on to another
+    # session in the meantime. Only the session this label was derived from gets
+    # to be renamed by it.
+    current=""
+    [ -f "$target" ] && { IFS= read -r current < "$target" || true; }
+    [ "${current%%$'\t'*}" = "$sid" ] || exit 0
+
+    printf '%s\t%s\n%s\n' "$sid" "$topic" "$ref" > "$target" 2>/dev/null
+) >/dev/null 2>&1 &
+disown 2>/dev/null
+
 exit 0

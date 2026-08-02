@@ -3,7 +3,7 @@
   "name": "warp-tab-clock",
   "displayName": "Warp Tab Clock",
   "description": "Live clock in the Warp tab title: the time Claude last replied, plus a label for the session",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": {
     "name": "Adrian Gasiorek",
     "url": "https://github.com/Xoviec"
@@ -22,6 +22,12 @@
       "type": "boolean",
       "title": "Derive labels from the first prompt",
       "description": "The first prompt of a session can name a client or a project, and the tab title is visible in screenshots, screen shares and Warp's history database. Turn this off to show only pinned names, the default label, or the project directory.",
+      "default": true
+    },
+    "llm_name": {
+      "type": "boolean",
+      "title": "Let a model name the tab",
+      "description": "Once per session, a one-shot headless Claude turns the derived label into the actual topic — \"Przegląd repo FE\" rather than \"przejrzyj szybko moje repo fe\". Costs one small model call per session and sends the first prompt to the API. Turn it off to keep the pattern-matched label.",
       "default": true
     }
   }

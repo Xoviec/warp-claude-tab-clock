@@ -33,6 +33,10 @@ trap 'rm -rf "$TMP"' EXIT
 export CLAUDE_CONFIG_DIR="$TMP/claude"
 export WARP_TERMINAL_SESSION_UUID="tab-uuid"
 export CLAUDE_PROJECT_DIR="$TMP/my-project"
+# Off by default for the whole suite: the summariser shells out to a real
+# `claude`, and a test run is not a reason to spend twenty model calls. The
+# cases that cover it turn it back on against a stub.
+export WARP_TAB_CLOCK_NO_LLM_NAME=1
 NAME_DIR="$CLAUDE_CONFIG_DIR/warp-tab-name"
 mkdir -p "$NAME_DIR" "$CLAUDE_PROJECT_DIR"
 
@@ -230,6 +234,120 @@ fi
 reset_names
 run_auto '{"session_id":"s1","prompt":"napraw ten bug"}' >/dev/null
 assert_eq "outside a repository the prompt still names the tab" "Fix: napraw ten bug" "$(label_line)"
+
+reset_names
+run_auto '{"session_id":"s1","prompt":"przejrzyj szybko moje repo fe"}' >/dev/null
+assert_eq "an analysis verb is a kind, not a bare prompt" \
+    "Analysis: przejrzyj szybko m…" "$(label_line)"
+
+echo
+echo "warp-tab-autoname.sh — the topic from the model"
+
+# A stub on PATH stands in for the real CLI: the summariser is worth testing,
+# twenty live model calls are not. The stub echoes whatever STUB_REPLY holds.
+STUB_BIN="$TMP/stub-bin"
+mkdir -p "$STUB_BIN"
+cat > "$STUB_BIN/claude" <<'STUB'
+#!/usr/bin/env bash
+# ${STUB_REPLY-...}, not ${STUB_REPLY:-...}: an empty reply is a case under
+# test, and :- would quietly swap the default back in for it.
+# Record what the summariser handed us, so a test can assert on the child's
+# environment rather than only on the reply.
+printf '%s\n' "child-uuid=[${WARP_TERMINAL_SESSION_UUID-unset}] child=[${WARP_TAB_CLOCK_CHILD-unset}]" \
+    >> "${STUB_LOG:-/dev/null}"
+printf '%s\n' "${STUB_REPLY-Przegląd repo FE}"
+exit "${STUB_STATUS:-0}"
+STUB
+chmod +x "$STUB_BIN/claude"
+
+# The summariser is detached, so the assertions wait for the file to change
+# rather than racing it.
+await_label() { # <not-this-label>
+    local i
+    for i in $(seq 1 100); do
+        [ "$(label_line)" != "$1" ] && return 0
+        sleep 0.1
+    done
+    return 1
+}
+
+run_auto_llm() { # <json>   — summariser on, against the stub
+    printf '%s' "$1" | env PATH="$STUB_BIN:$PATH" WARP_TAB_CLOCK_NO_LLM_NAME=0 \
+        "$AUTO_HOOK"
+}
+
+reset_names
+placeholder="Analysis: przejrzyj szybko m…"
+run_auto_llm '{"session_id":"s1","prompt":"przejrzyj szybko moje repo fe"}' >/dev/null
+await_label "$placeholder"
+assert_eq "the model's topic replaces the placeholder" "Przegląd repo FE" "$(label_line)"
+assert_eq "the ref line survives the rewrite" "" "$(ref_line)"
+
+reset_names
+STUB_REPLY='"Przegląd repo FE".' run_auto_llm \
+    '{"session_id":"s1","prompt":"przejrzyj szybko moje repo fe"}' >/dev/null
+await_label "$placeholder"
+assert_eq "quotes and a trailing period are stripped" "Przegląd repo FE" "$(label_line)"
+
+reset_names
+STUB_REPLY="$(printf 'I cannot help with that.\nSorry.')" run_auto_llm \
+    '{"session_id":"s1","prompt":"przejrzyj szybko moje repo fe"}' >/dev/null
+await_label "$placeholder"
+assert_eq "only the first line of a multi-line reply is used" \
+    "I cannot help with that" "$(label_line)"
+
+reset_names
+STUB_REPLY="$(printf 'Bardzo długa etykieta która nie zmieści się w tabie')" run_auto_llm \
+    '{"session_id":"s1","prompt":"przejrzyj szybko moje repo fe"}' >/dev/null
+await_label "$placeholder"
+assert_eq "an over-long topic is truncated to 28 characters" \
+    "Bardzo długa etykieta która …" "$(label_line)"
+
+reset_names
+STUB_REPLY="" run_auto_llm '{"session_id":"s1","prompt":"przejrzyj szybko moje repo fe"}' >/dev/null
+sleep 1
+assert_eq "an empty reply leaves the placeholder alone" "$placeholder" "$(label_line)"
+
+# "Not logged in ..." arrives on stdout, with a non-zero status behind it.
+reset_names
+STUB_STATUS=1 STUB_REPLY="Not logged in · Please run /login" run_auto_llm \
+    '{"session_id":"s1","prompt":"przejrzyj szybko moje repo fe"}' >/dev/null
+sleep 1
+assert_eq "a failing CLI does not name the tab after its error" \
+    "$placeholder" "$(label_line)"
+
+# Both guards on the spawned process, checked where they are actually set. The
+# empty uuid is what saves a live tab from an older copy of this script that is
+# still the installed plugin and does not know the marker.
+reset_names
+STUB_LOG="$TMP/stub.log" run_auto_llm \
+    '{"session_id":"s1","prompt":"przejrzyj szybko moje repo fe"}' >/dev/null
+await_label "$placeholder"
+assert_contains "the child is marked as a child" "child=[1]" "$(cat "$TMP/stub.log")"
+assert_contains "the child gets no tab uuid" "child-uuid=[]" "$(cat "$TMP/stub.log")"
+
+# The spawned Claude runs both hooks itself. Neither may act, or the first forks
+# without end and the second stamps the tab with the child's own directory.
+reset_names
+printf '%s' '{"session_id":"s1","prompt":"przejrzyj szybko moje repo fe"}' \
+    | WARP_TAB_CLOCK_CHILD=1 "$AUTO_HOOK" >/dev/null
+assert_no_file "the child does not write a label at all" "$NAME_DIR/tab-uuid.auto"
+
+printf 'sess-1\tAuto label\n' > "$NAME_DIR/tab-uuid.auto"
+out="$(WARP_TAB_CLOCK_CHILD=1 "$TIME_HOOK")"
+assert_eq "the child emits no title" "" "$out"
+
+reset_names
+run_auto '{"session_id":"s1","prompt":"przejrzyj szybko moje repo fe"}' >/dev/null
+sleep 1
+assert_eq "WARP_TAB_CLOCK_NO_LLM_NAME=1 keeps the placeholder" "$placeholder" "$(label_line)"
+
+reset_names
+printf '%s' '{"session_id":"s1","prompt":"przejrzyj szybko moje repo fe"}' \
+    | env PATH="$STUB_BIN:$PATH" WARP_TAB_CLOCK_NO_LLM_NAME=0 \
+      CLAUDE_PLUGIN_OPTION_LLM_NAME=false "$AUTO_HOOK" >/dev/null
+sleep 1
+assert_eq "the llm_name plugin option opts out" "$placeholder" "$(label_line)"
 
 echo
 printf '%s passed, %s failed, %s skipped\n' "$pass" "$fail" "$skip"

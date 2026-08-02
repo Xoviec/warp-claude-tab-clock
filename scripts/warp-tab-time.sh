@@ -23,6 +23,12 @@
 # fields on Stop hooks, so there we write to the controlling tty instead.
 set -u
 
+# The headless Claude that warp-tab-autoname.sh spawns to name the tab runs this
+# hook when it finishes, from its own working directory. Left alone it would
+# stamp the tab with that directory's name, undoing the rename it was spawned to
+# perform.
+[ "${WARP_TAB_CLOCK_CHILD:-}" = "1" ] && exit 0
+
 TERMINAL_SEQUENCE_MIN_VERSION="2.1.141"
 NAME_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/warp-tab-name"
 
