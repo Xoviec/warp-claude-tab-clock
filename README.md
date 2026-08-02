@@ -123,8 +123,15 @@ it is parsed out of the current git branch, so `fix/2321-crash` also gives
 With no ref the kind prefixes the prompt, unless the prompt already says it —
 `Fix the invoice export` is not turned into `Fix: Fix the invoice export`. With
 neither, the prompt stands on its own, collapsed to one line and truncated to 28
-characters. Prompts beginning with `/` are skipped, because `/tldr` describes a
-tab poorly.
+characters.
+
+**A session you open with a command is named after the command.** The work is
+what the command does, so `/review-summary https://github.com/acme/app/pull/12`
+gives `Review summary` — the arguments never reach the title, which keeps URLs
+and pasted context out of it. Namespaced commands use their leaf, so
+`/xoviec:review-summary` reads the same, and a `#2121` among the arguments is
+still picked up as a ref. Commands that only operate Claude Code — `/clear`,
+`/login`, `/plugin` and their like — name nothing and leave the tab as it was.
 
 **Renaming follows the ref.** The label is set on the first prompt of a session
 and then replaced only when the ref changes — you move to another ticket, or

@@ -126,8 +126,8 @@ run_auto '{"session_id":"s2","prompt":"A brand new session"}' >/dev/null
 assert_eq "a new session does rename" "s2	A brand new session" "$(cat "$auto_file")"
 
 reset_names
-run_auto '{"session_id":"s1","prompt":"/tldr"}' >/dev/null
-assert_no_file "slash commands are skipped" "$auto_file"
+run_auto '{"session_id":"s1","prompt":"/clear"}' >/dev/null
+assert_no_file "commands that only work the tool are skipped" "$auto_file"
 
 reset_names
 run_auto '{"session_id":"s1","prompt":"first line\nsecond line"}' >/dev/null
@@ -162,6 +162,49 @@ echo "warp-tab-autoname.sh — kind and ref"
 
 label_line() { head -1 "$auto_file" 2>/dev/null | cut -f2- ; }
 ref_line()   { sed -n '2p' "$auto_file" 2>/dev/null ; }
+
+echo
+echo "warp-tab-autoname.sh — commands"
+
+reset_names
+run_auto '{"session_id":"s1","prompt":"/review-summary"}' >/dev/null
+assert_eq "a command names the tab" "Review summary" "$(label_line)"
+
+reset_names
+run_auto '{"session_id":"s1","prompt":"/review-summary https://github.com/acme/app/pull/12"}' >/dev/null
+assert_eq "the arguments stay out of the title" "Review summary" "$(label_line)"
+
+reset_names
+run_auto '{"session_id":"s1","prompt":"/xoviec:review-summary"}' >/dev/null
+assert_eq "a namespaced command uses its leaf" "Review summary" "$(label_line)"
+
+reset_names
+run_auto '{"session_id":"s1","prompt":"/deploy #2121"}' >/dev/null
+assert_eq "a ref in the arguments is kept" "Deploy #2121" "$(label_line)"
+assert_eq "and recorded as the ref" "#2121" "$(ref_line)"
+
+reset_names
+run_auto '{"session_id":"s1","prompt":"/login"}' >/dev/null
+assert_no_file "another tool command is skipped" "$auto_file"
+
+reset_names
+run_auto '{"session_id":"s1","prompt":"/ "}' >/dev/null
+assert_no_file "a bare slash names nothing" "$auto_file"
+
+# The summariser is handed the prompt on a third line; a command has no use for
+# it, and spending a model call to reword "Review summary" would be waste.
+mkdir -p "$TMP/stub-bin"
+printf '#!/bin/sh\necho "SUMMARISED" > "%s"\n' "$TMP/llm-ran" > "$TMP/stub-bin/claude"
+chmod +x "$TMP/stub-bin/claude"
+rm -f "$TMP/llm-ran"
+reset_names
+printf '%s' '{"session_id":"s1","prompt":"/review-summary"}' | env -u WARP_TAB_CLOCK_NO_LLM_NAME PATH="$TMP/stub-bin:$PATH" "$AUTO_HOOK" >/dev/null
+sleep_for_child() { for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$TMP/llm-ran" ] && return 0; command sleep 0.1; done; return 1; }
+if sleep_for_child; then
+    notok "a command does not spend a model call" "the summariser ran"
+else
+    ok "a command does not spend a model call"
+fi
 
 reset_names
 run_auto '{"session_id":"s1","prompt":"zrób code review #2121"}' >/dev/null

@@ -16,6 +16,12 @@
 # ref the kind still prefixes the prompt ("Feat: dodaj dark mode"); without either
 # the prompt stands on its own.
 #
+# A session opened with a command is named after the command — "/review-summary
+# <url>" gives "Review summary" — since that is a better description of the work
+# than anything its arguments contain, and it keeps the arguments out of the
+# title. Commands that only operate the tool, /clear and /login and their like,
+# name nothing.
+#
 # That last case is the common one outside ticket-driven work, and a raw prompt
 # is a poor tab title — "przejrzyj szybko moje repo fe" says how it was asked,
 # not what it is about. So the regex label is only the placeholder: a one-shot
@@ -69,10 +75,13 @@ fi
 # does the truncation because it counts characters, not bytes: bash's
 # ${name:0:N} falls back to bytes under a non-UTF-8 locale and would cut a
 # multibyte character in half, leaving invalid UTF-8 in the title and in the
-# emitting hook's JSON. Slash commands are skipped — "/tldr" describes a tab
-# poorly.
+# emitting hook's JSON.
 out="$(printf '%s' "$input" | jq -r --argjson n "$MAX_LEN" --arg branch "$branch" '
     def collapse: gsub("[[:space:]]+"; " ") | sub("^ "; "") | sub(" $"; "");
+    def humanize:
+      gsub("[-_]+"; " ") | collapse
+      | if length > 0 then (.[0:1] | ascii_upcase) + .[1:] else . end;
+    def truncate($n): if length > $n then .[0:$n] + "…" else . end;
 
     # First match wins, so the specific kinds are tested before the catch-all
     # "Feat" — "zrób code review" is a review, not a feature.
@@ -106,9 +115,36 @@ out="$(printf '%s' "$input" | jq -r --argjson n "$MAX_LEN" --arg branch "$branch
         else ([scan("[0-9]{2,}")] | .[0] // "") | if . == "" then "" else "#" + . end
         end;
 
-    (.session_id // "") as $sid
+    # Commands that run the session are the best description of it there is:
+    # "/review-summary <url>" is a review. Commands that only work the tool are
+    # not, and naming a tab "Clear" or "Login" is worse than leaving it alone.
+    ["add-dir","agents","bug","clear","compact","config","context","cost","doctor",
+     "exit","export","fast","feedback","help","hooks","ide","init","login","logout",
+     "mcp","memory","model","output-style","permissions","plugin","privacy-settings",
+     "quit","release-notes","resume","rewind","status","statusline","terminal-setup",
+     "todos","upgrade","usage","vim"] as $tool_commands
+
+    | (.session_id // "") as $sid
     | (.prompt // "") as $raw
-    | if $sid == "" or $raw == "" or ($raw | startswith("/")) then empty
+    | if $sid == "" or $raw == "" then empty
+      elif $raw | startswith("/") then
+        # The arguments are dropped: "/review-summary https://…" names the tab
+        # after the command, and the URL stays out of the title entirely.
+        ($raw | split("\n")[0] | collapse | ltrimstr("/") | split(" ")[0]) as $cmd
+        # Plugin commands arrive namespaced, and the leaf is the part that reads
+        # as a topic: "xoviec:review-summary" -> "Review summary".
+        | ($cmd | split(":") | last // "") as $leaf
+        | if ($leaf | test("^[A-Za-z0-9][A-Za-z0-9_-]*$") | not)
+             or ($tool_commands | index($leaf | ascii_downcase)) then empty
+          else
+            ($raw | ref_of) as $ref
+            | ($leaf | humanize) as $base
+            | (if $ref != "" then $base + " " + $ref else $base end
+               | truncate($n)) as $name
+            # No third line: the command already names the topic, so the
+            # summariser has nothing to improve and is not worth a model call.
+            | $sid + "\t" + $name + "\n" + $ref + "\n"
+          end
       else
         ($raw | split("\n")[0] | collapse) as $text
         | if $text == "" then empty
