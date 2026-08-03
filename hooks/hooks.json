@@ -1,12 +1,12 @@
 {
-  "description": "Live clock in the Warp tab title",
+  "description": "Live clock in the Warp tab title, coloured by what the session is doing",
   "hooks": {
     "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/warp-tab-time.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/warp-tab-time.sh ready"
           }
         ]
       }
@@ -17,6 +17,37 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/warp-tab-autoname.sh"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/warp-tab-time.sh waiting"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/warp-tab-time.sh waiting"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/warp-tab-time.sh working --from waiting"
           }
         ]
       }

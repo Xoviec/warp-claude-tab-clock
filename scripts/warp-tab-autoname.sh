@@ -53,14 +53,23 @@ LLM_TIMEOUT="${WARP_TAB_CLOCK_LLM_TIMEOUT:-25}"
 # second stamps the tab with the child's own directory. Both scripts bail on
 # this marker, which the spawn sets on the child's environment.
 [ "${WARP_TAB_CLOCK_CHILD:-}" = "1" ] && exit 0
-[ "${WARP_TAB_CLOCK_NO_AUTONAME:-}" = "1" ] && exit 0
-[ "${CLAUDE_PLUGIN_OPTION_AUTONAME:-true}" = "false" ] && exit 0
 
 uuid="${WARP_TERMINAL_SESSION_UUID:-default}"
 target="$NAME_DIR/$uuid.auto"
 
+# Read before any of the opt-outs below can leave: the hook input has to be
+# consumed whether or not this run has a name to derive, and every path from
+# here on paints the tab 🟡 with the time the prompt was submitted. Naming can
+# be turned off; the clock is the point of the plugin.
 input="$(cat)"
-command -v jq >/dev/null 2>&1 || exit 0
+
+TITLE="$(dirname "$0")/warp-tab-time.sh"
+emit_working() { [ -x "$TITLE" ] && "$TITLE" working 2>/dev/null || true; }
+
+[ "${WARP_TAB_CLOCK_NO_AUTONAME:-}" = "1" ] && { emit_working; exit 0; }
+[ "${CLAUDE_PLUGIN_OPTION_AUTONAME:-true}" = "false" ] && { emit_working; exit 0; }
+
+command -v jq >/dev/null 2>&1 || { emit_working; exit 0; }
 
 # symbolic-ref only reads .git/HEAD, so this stays cheap enough for every prompt.
 # It is also the form that survives a branch with no commits yet, where
@@ -166,7 +175,7 @@ out="$(printf '%s' "$input" | jq -r --argjson n "$MAX_LEN" --arg branch "$branch
             | $sid + "\t" + $name + "\n" + $ref + "\n" + $text
           end
       end' 2>/dev/null)"
-[ -n "$out" ] || exit 0
+[ -n "$out" ] || { emit_working; exit 0; }
 
 # Three lines out, two lines stored: the collapsed prompt is what the summariser
 # below is handed, and it has no business in the file the Stop hook reads.
@@ -180,12 +189,15 @@ if [ -f "$target" ]; then
     prev_line=""; prev_ref=""
     { IFS= read -r prev_line; IFS= read -r prev_ref; } < "$target" || true
     if [ "${prev_line%%$'\t'*}" = "$sid" ]; then
-        [ -n "$ref" ] && [ "$ref" != "$prev_ref" ] || exit 0
+        [ -n "$ref" ] && [ "$ref" != "$prev_ref" ] || { emit_working; exit 0; }
     fi
 fi
 
-mkdir -p "$NAME_DIR" || exit 0
+mkdir -p "$NAME_DIR" || { emit_working; exit 0; }
 printf '%s\n%s\n' "$line" "$ref" > "$target" 2>/dev/null
+
+# After the write, so the 🟡 stamp already carries the name this prompt earned.
+emit_working
 
 # --- the topic, from the model ------------------------------------------------
 #

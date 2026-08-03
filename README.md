@@ -70,6 +70,35 @@ once to clear those entries, then install the plugin as above.
 
 ## Usage
 
+### The dot
+
+The title carries what the session is doing, and the clock is restamped at every
+change — so the time is when the state last changed, not only when Claude last
+replied:
+
+```
+🟡 14:32 · Fix #2321      a turn is running
+🔴 14:33 · Fix #2321      Claude wants a permission decision from you
+🟢 14:41 · Fix #2321      the answer has landed
+```
+
+Warp has no way to colour a tab from a running program — [tab colours come from
+Tab Configs](https://docs.warp.dev/terminal/windows/tab-configs/) and are fixed
+when the tab opens, and the requests to script them
+([#6897](https://github.com/warpdotdev/warp/issues/6897),
+[#2743](https://github.com/warpdotdev/warp/issues/2743)) are unimplemented. The
+title is the one part of the tab a program owns, so the state goes there.
+
+Turn it off for the clock and the label alone:
+
+```
+/plugin configure warp-tab-clock@xoviec    # "Colour the tab by what the session is doing" → off
+```
+
+or `export WARP_TAB_CLOCK_NO_STATE=1` without the plugin.
+
+### The label
+
 The label is resolved on every reply, first match wins:
 
 | Priority | Source | Set by |
@@ -158,12 +187,20 @@ have ever used. `rm -rf ~/.claude/warp-tab-name` is safe at any time, and
 
 ## How it works
 
-Two Claude Code hooks, no daemon and no polling:
+Claude Code hooks, no daemon and no polling. `warp-tab-time.sh` resolves the
+label and emits `OSC 0` (`ESC ] 0 ; <title> BEL`); the state it paints comes from
+which event called it:
 
-- **`Stop` → `warp-tab-time.sh`** runs after every assistant turn, resolves the
-  label, and emits `OSC 0` (`ESC ] 0 ; <title> BEL`).
-- **`UserPromptSubmit` → `warp-tab-autoname.sh`** records a label derived from
-  the prompt and the current git branch.
+| Event | Runs | State |
+|---|---|---|
+| `UserPromptSubmit` | `warp-tab-autoname.sh`, which names the tab and then stamps it | 🟡 |
+| `PermissionRequest`, `Notification` (`permission_prompt`) | `warp-tab-time.sh waiting` | 🔴 |
+| `PostToolUse` | `warp-tab-time.sh working --from waiting` | 🟡 |
+| `Stop` | `warp-tab-time.sh ready` | 🟢 |
+
+`PostToolUse` is what returns the tab to 🟡 once a permission has been granted.
+It fires after every tool call, dozens per turn, so `--from waiting` makes it
+read one file and leave unless the tab is actually still red.
 
 Claude Code cannot write to `/dev/tty` from a hook subprocess, so the escape
 sequence is returned as JSON instead:

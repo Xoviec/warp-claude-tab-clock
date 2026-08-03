@@ -1,8 +1,19 @@
 #!/bin/bash
-# Stop hook — stamp the terminal tab title with the time Claude last replied.
+# Stamps the terminal tab title with the time and the session's state.
 #
-# Runs after every assistant turn, so the tab reads e.g. "14:32 · Invoice export"
-# and the timestamp is the moment of the last response.
+#   warp-tab-time.sh [working|waiting|ready] [--from <state>]
+#
+# The state is a coloured dot in front of the clock, and every emission restamps
+# the time, so the tab reads "🟡 14:32 · Invoice export" the moment a prompt is
+# submitted and "🟢 14:41 · Invoice export" when the answer lands:
+#
+#   working  🟡  a turn is running
+#   waiting  🔴  Claude wants a permission decision from you
+#   ready    🟢  the turn finished — the default, and what the Stop hook emits
+#
+# --from makes the emission conditional on the state last recorded, which is how
+# PostToolUse returns the tab to 🟡 after a permission was granted without
+# spending an emission on every one of the dozens of tool calls in a turn.
 #
 # Label resolution, first hit wins:
 #   1. <state>/<WARP_TERMINAL_SESSION_UUID>       — pinned with `tabname`
@@ -61,7 +72,38 @@ read_auto_name() { # "<session_id>\t<name>" written by warp-tab-autoname.sh
     printf '%s' "$name"
 }
 
+state="ready"
+from=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        working|waiting|ready) state="$1" ;;
+        --from) shift; from="${1:-}" ;;
+        *) ;;
+    esac
+    shift
+done
+
 uuid="${WARP_TERMINAL_SESSION_UUID:-default}"
+state_file="$NAME_DIR/$uuid.state"
+
+# The conditional emission. Anything that is not the state the caller expected
+# means the turn has moved on, and the dot it wanted to paint is already stale.
+if [ -n "$from" ]; then
+    current=""
+    [ -f "$state_file" ] && { IFS= read -r current < "$state_file" || true; }
+    [ "$current" = "$from" ] || exit 0
+fi
+
+case "$state" in
+    working) dot="🟡" ;;
+    waiting) dot="🔴" ;;
+    *)       dot="🟢" ;;
+esac
+# The dot is declinable on its own: the clock and the label are useful without
+# it, and an emoji in the tab bar is a matter of taste.
+[ "${WARP_TAB_CLOCK_NO_STATE:-}" = "1" ] && dot=""
+[ "${CLAUDE_PLUGIN_OPTION_STATE_DOT:-true}" = "false" ] && dot=""
+
 base=""
 base="$(read_name "$NAME_DIR/$uuid" || true)"
 [ -n "$base" ] || base="$(read_auto_name "$NAME_DIR/$uuid.auto" || true)"
@@ -76,7 +118,12 @@ base="$(read_name "$NAME_DIR/$uuid" || true)"
 base="${base//\"/}"
 base="${base//\\/}"
 base="${base//[[:cntrl:]]/}"
-title="$(date +%H:%M) · ${base}"
+title="${dot:+$dot }$(date +%H:%M) · ${base}"
+
+# Recorded after the label is resolved but before delivery, so a --from caller
+# that runs while this one is still emitting sees the new state rather than
+# repainting the old one.
+mkdir -p "$NAME_DIR" 2>/dev/null && printf '%s\n' "$state" > "$state_file" 2>/dev/null
 
 raw="${CLAUDE_CODE_VERSION:-}"
 ver="$(printf '%s' "$raw" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"

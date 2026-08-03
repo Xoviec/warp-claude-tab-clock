@@ -42,9 +42,19 @@ mkdir -p "$NAME_DIR" "$CLAUDE_PROJECT_DIR"
 
 reset_names() { rm -rf "$NAME_DIR"; mkdir -p "$NAME_DIR"; }
 
-# Title as the hook would emit it, with the leading "HH:MM · " stripped.
+# Title as the hook would emit it, with the state dot and the leading "HH:MM · "
+# stripped. The dot is optional, so it is matched as "whatever precedes the
+# clock", not as a specific character.
 label_of() { # <json>
-    printf '%s' "$1" | jq -r '.terminalSequence' | sed -e 's/^.*]0;[0-9][0-9]:[0-9][0-9] · //' -e 's/$//' | tr -d '\a\033'
+    printf '%s' "$1" | jq -r '.terminalSequence' \
+        | sed -E -e 's/^.*\]0;//' -e 's/^[^0-9]+ //' -e 's/^[0-9][0-9]:[0-9][0-9] · //' \
+        | tr -d '\a\033'
+}
+# Just the state dot, empty when the title carries none.
+dot_of() { # <json>
+    printf '%s' "$1" | jq -r '.terminalSequence // ""' \
+        | sed -E -e 's/^.*\]0;//' -e 's/^([^0-9]+) .*/\1/' -e 's/^[0-9].*//' \
+        | tr -d '\a\033'
 }
 
 echo
@@ -73,6 +83,31 @@ assert_eq "auto name beats the default file" "Auto label" "$(label_of "$out")"
 echo "Pinned label" > "$NAME_DIR/tab-uuid"
 out="$("$TIME_HOOK")"
 assert_eq "pinned name beats the auto name" "Pinned label" "$(label_of "$out")"
+
+echo
+echo "warp-tab-time.sh — state dot"
+
+reset_names
+echo "Pinned label" > "$NAME_DIR/tab-uuid"
+assert_eq "a turn in flight is yellow"    "🟡" "$(dot_of "$("$TIME_HOOK" working)")"
+assert_eq "a permission decision is red"  "🔴" "$(dot_of "$("$TIME_HOOK" waiting)")"
+assert_eq "a finished turn is green"      "🟢" "$(dot_of "$("$TIME_HOOK" ready)")"
+assert_eq "no argument means finished"    "🟢" "$(dot_of "$("$TIME_HOOK")")"
+assert_eq "the label survives the dot"    "Pinned label" "$(label_of "$("$TIME_HOOK" working)")"
+
+# --from: repaint only what the caller expected to find.
+"$TIME_HOOK" waiting >/dev/null
+assert_eq "--from repaints a matching state" "🟡" "$(dot_of "$("$TIME_HOOK" working --from waiting)")"
+assert_eq "--from is silent otherwise" "" "$("$TIME_HOOK" working --from waiting)"
+
+reset_names
+echo "Pinned label" > "$NAME_DIR/tab-uuid"
+assert_eq "WARP_TAB_CLOCK_NO_STATE=1 drops the dot" "" \
+    "$(dot_of "$(WARP_TAB_CLOCK_NO_STATE=1 "$TIME_HOOK" working)")"
+assert_eq "and the clock stays"  "Pinned label" \
+    "$(label_of "$(WARP_TAB_CLOCK_NO_STATE=1 "$TIME_HOOK" working)")"
+assert_eq "the plugin option drops it too" "" \
+    "$(dot_of "$(CLAUDE_PLUGIN_OPTION_STATE_DOT=false "$TIME_HOOK" waiting)")"
 
 echo
 echo "warp-tab-time.sh — output safety"
@@ -116,7 +151,15 @@ auto_file="$NAME_DIR/tab-uuid.auto"
 
 reset_names
 out="$(run_auto '{"session_id":"s1","prompt":"Fix the invoice export"}')"
-assert_eq "prints nothing to stdout" "" "$out"
+# Free text on stdout would be injected into the prompt as context, so the hook
+# may only ever speak in the JSON control object.
+if printf '%s' "$out" | jq -e 'keys == ["terminalSequence"]' >/dev/null 2>&1; then
+    ok "speaks only in the JSON control object"
+else
+    notok "speaks only in the JSON control object" "got [$out]"
+fi
+assert_eq "a submitted prompt paints the tab yellow" "🟡" "$(dot_of "$out")"
+assert_eq "with the name this prompt earned" "Fix the invoice export" "$(label_of "$out")"
 assert_eq "records session id and label" "s1	Fix the invoice export" "$(cat "$auto_file" 2>/dev/null)"
 
 run_auto '{"session_id":"s1","prompt":"and now something else"}' >/dev/null
@@ -156,6 +199,12 @@ assert_no_file "WARP_TAB_CLOCK_NO_AUTONAME=1 opts out" "$auto_file"
 reset_names
 CLAUDE_PLUGIN_OPTION_AUTONAME=false run_auto '{"session_id":"s1","prompt":"Something private"}' >/dev/null
 assert_no_file "the autoname plugin option opts out" "$auto_file"
+
+# Naming can be declined; the clock and the dot are the plugin's whole point,
+# so they are stamped on every path out of the hook.
+reset_names
+assert_eq "the tab is stamped even with naming off" "🟡" \
+    "$(dot_of "$(WARP_TAB_CLOCK_NO_AUTONAME=1 run_auto '{"session_id":"s1","prompt":"Something private"}')")"
 
 echo
 echo "warp-tab-autoname.sh — kind and ref"
