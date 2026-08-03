@@ -64,7 +64,10 @@ target="$NAME_DIR/$uuid.auto"
 input="$(cat)"
 
 TITLE="$(dirname "$0")/warp-tab-time.sh"
-emit_working() { [ -x "$TITLE" ] && "$TITLE" working 2>/dev/null || true; }
+emit_working() {
+    [ -x "$TITLE" ] || return 0
+    "$TITLE" working 2>/dev/null || true
+}
 
 [ "${WARP_TAB_CLOCK_NO_AUTONAME:-}" = "1" ] && { emit_working; exit 0; }
 [ "${CLAUDE_PLUGIN_OPTION_AUTONAME:-true}" = "false" ] && { emit_working; exit 0; }
@@ -189,7 +192,10 @@ if [ -f "$target" ]; then
     prev_line=""; prev_ref=""
     { IFS= read -r prev_line; IFS= read -r prev_ref; } < "$target" || true
     if [ "${prev_line%%$'\t'*}" = "$sid" ]; then
-        [ -n "$ref" ] && [ "$ref" != "$prev_ref" ] || { emit_working; exit 0; }
+        if [ -z "$ref" ] || [ "$ref" = "$prev_ref" ]; then
+            emit_working
+            exit 0
+        fi
     fi
 fi
 
@@ -230,7 +236,7 @@ command -v claude >/dev/null 2>&1 || exit 0
     # older copy of this script still installed as the plugin, which has never
     # heard of the marker. Without a uuid it resolves the state file to
     # "default.auto", which nothing reads, instead of the live tab's.
-    WARP_TAB_CLOCK_CHILD=1 WARP_TERMINAL_SESSION_UUID= claude -p --model "$LLM_MODEL" \
+    WARP_TAB_CLOCK_CHILD=1 WARP_TERMINAL_SESSION_UUID='' claude -p --model "$LLM_MODEL" \
         "Name the terminal tab for this coding session. Reply with ONLY the topic: 2-4 words, at most $MAX_LEN characters, in the language the request is written in, no quotes and no trailing period. Request: $text" \
         > "$tmp" 2>/dev/null &
     child=$!

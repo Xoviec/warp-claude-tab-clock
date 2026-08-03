@@ -32,6 +32,7 @@ jobs:
         run: |
           jq -r '.hooks[][].hooks[].command' hooks/hooks.json \
             | sed 's|"${CLAUDE_PLUGIN_ROOT}"/||' \
+            | awk '{print $1}' | sort -u \
             | while read -r script; do
                 test -x "$script" && echo "ok  $script" || { echo "missing or not executable: $script"; exit 1; }
               done

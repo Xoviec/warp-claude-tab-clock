@@ -355,8 +355,7 @@ chmod +x "$STUB_BIN/claude"
 # The summariser is detached, so the assertions wait for the file to change
 # rather than racing it.
 await_label() { # <not-this-label>
-    local i
-    for i in $(seq 1 100); do
+    for _ in $(seq 1 100); do
         [ "$(label_line)" != "$1" ] && return 0
         sleep 0.1
     done
