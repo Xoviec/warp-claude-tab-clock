@@ -16,6 +16,8 @@ one derived automatically from the first prompt of the session.
 - [Claude Code](https://claude.com/claude-code) **2.1.141 or newer** — older
   versions reject the `terminalSequence` hook output this relies on
 - `jq` — needed by the auto-naming hook (`brew install jq`)
+- the `claude` CLI on `PATH` — the model-derived label spawns a one-shot headless
+  session to get it; without it the pattern-matched label stands
 - zsh (Warp's default shell on macOS)
 
 ## Install
@@ -134,7 +136,9 @@ echo "New label" > ~/.claude/warp-tab-name/$WARP_TERMINAL_SESSION_UUID
 ### Auto-naming
 
 A `UserPromptSubmit` hook names the tab after the work, not after the prompt
-verbatim: `Code review #2121`, `Fix #2321`. Two things go into it.
+verbatim: `Code review #2121`, `Fix #2321`. The label lands in two steps — one
+pattern-matched out of the prompt the moment it is submitted, then a topic from a
+model a few seconds later. Two things go into the first one.
 
 **The kind** comes from the verbs in the prompt — review, fix, refactor, test,
 docs, release, or feature — recognised in English and Polish. **The ref** is a
@@ -161,6 +165,29 @@ and pasted context out of it. Namespaced commands use their leaf, so
 `/xoviec:review-summary` reads the same, and a `#2121` among the arguments is
 still picked up as a ref. Commands that only operate Claude Code — `/clear`,
 `/login`, `/plugin` and their like — name nothing and leave the tab as it was.
+A command already names the topic, so this path skips the model call below.
+
+**The topic comes from a model.** Everything above is pattern-matched out of the
+prompt's own words, and those say how the work was asked for rather than what it
+is about — `przejrzyj szybko moje repo fe` is a poor tab title, and so is every
+label in the table above. They are the placeholder. A one-shot headless Claude
+then rewrites the placeholder into the topic — `Przegląd repo FE` — and the tab
+settles a few seconds into the first answer.
+
+It runs only where a label was just written: **once per session**, and again on a
+change of ticket, not once per turn. It runs detached, because a
+`UserPromptSubmit` hook holds the turn for as long as it lasts. So the cost is
+one small model call per session — and **the first line of your first prompt is
+sent to the API** to make it. If the `claude` CLI is missing, the call fails, or
+it outlasts the timeout, the placeholder stands and nothing else happens.
+
+```
+/plugin configure warp-tab-clock@xoviec    # "Let a model name the tab" → off
+```
+
+or `export WARP_TAB_CLOCK_NO_LLM_NAME=1` without the plugin. Two knobs if you
+keep it: `WARP_TAB_CLOCK_LLM_MODEL` (default `haiku`) and
+`WARP_TAB_CLOCK_LLM_TIMEOUT` (default `25`, seconds).
 
 **Renaming follows the ref.** The label is set on the first prompt of a session
 and then replaced only when the ref changes — you move to another ticket, or
@@ -171,8 +198,9 @@ the same tab always renames.
 **Whatever is derived ends up on your screen.** Tab titles show in screenshots,
 screen shares and recordings, and Warp keeps them in its own history database, so
 a label outlives the session that produced it. A prompt with no recognised kind
-and no ref is used verbatim, so if what you type tends to name a client or an
-unreleased project, turn auto-naming off:
+and no ref is used verbatim, and with the model naming on the prompt also leaves
+the machine, so if what you type tends to name a client or an unreleased project,
+turn auto-naming off — that switch covers the model call too:
 
 ```
 /plugin configure warp-tab-clock@xoviec    # "Derive labels from the first prompt" → off
@@ -201,6 +229,12 @@ which event called it:
 `PostToolUse` is what returns the tab to 🟡 once a permission has been granted.
 It fires after every tool call, dozens per turn, so `--from waiting` makes it
 read one file and leave unless the tab is actually still red.
+
+The model naming makes the `UserPromptSubmit` hook recursive: the headless Claude
+it spawns runs these same hooks. Both scripts bail on `WARP_TAB_CLOCK_CHILD=1`,
+which the spawn sets on the child's environment, so the child neither forks again
+nor stamps the tab with its own working directory. It is also started from a
+neutral directory, to keep it off the project's `CLAUDE.md` and settings.
 
 Claude Code cannot write to `/dev/tty` from a hook subprocess, so the escape
 sequence is returned as JSON instead:
@@ -245,6 +279,10 @@ also works under the `env` key in `settings.json` if you prefer it there.
   `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` nor `CLAUDE_CODE_VERSION` appears in the
   published environment-variable reference, and `terminalSequence` is new in
   2.1.141. They work today; a future release could change them.
+- **It makes one model call per session** — the topic in the tab title comes from
+  a headless Claude, so the first line of the first prompt goes to the API. Off
+  with one option, and the pattern-matched label takes over; see
+  [Auto-naming](#auto-naming).
 - macOS/zsh only as written. The hooks themselves are portable; the shell wiring
   is not.
 
@@ -267,6 +305,10 @@ set in that shell. It only applies to tabs opened after setup.
 **Auto-naming does nothing.** Check `jq` is installed, and that auto-naming is
 not switched off in `/plugin configure warp-tab-clock@xoviec`. Without `jq` the
 hook exits silently and the label falls back to the project directory name.
+
+**The label changes on its own a few seconds in.** That is the model naming
+replacing the pattern-matched placeholder, once per session. Keep the placeholder
+with `WARP_TAB_CLOCK_NO_LLM_NAME=1`, or the "Let a model name the tab" option.
 
 **Check what the hook would emit** — this prints the JSON without touching the
 terminal:
