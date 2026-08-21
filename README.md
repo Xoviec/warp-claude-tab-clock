@@ -2,13 +2,12 @@
 
 Puts a live clock in your Warp tab title while you work in Claude Code.
 
-```
-00:32 · Invoice export
-```
+![Three Warp tabs, each with a coloured dot, a time and a label: red 15:42 · Code Review, yellow 15:44 · Review Issues, green 15:46 · say hello to community.](docs/tab-bar.png)
 
-The time is the moment Claude last replied, so a glance at the tab bar tells you
-how stale each session is. The label part is either a name you pin yourself or
-one derived automatically from the first prompt of the session.
+One glance at the tab bar and you know which session wants something from you
+(🔴), which is still working (🟡) and which has an answer waiting (🟢) — plus how
+long each has been sitting there. The label is either a name you pin yourself or
+one derived automatically from what the session is about.
 
 ## Requirements
 
@@ -76,7 +75,7 @@ once to clear those entries, then install the plugin as above.
 
 The title carries what the session is doing, and the clock is restamped at every
 change — so the time is when the state last changed, not only when Claude last
-replied:
+replied. Same label, three states:
 
 ```
 🟡 14:32 · Fix #2321      a turn is running
