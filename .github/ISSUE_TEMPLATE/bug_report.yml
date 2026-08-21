@@ -1,0 +1,82 @@
+name: Bug report
+description: The title does not do what it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Almost every "the title never changes" report is a manual tab name in
+        Warp, which overrides the escape sequence completely. The checks below
+        are the ones from
+        [Troubleshooting](https://github.com/Xoviec/warp-claude-tab-clock#troubleshooting)
+        — please run them first, since they separate a problem in this plugin
+        from a problem in Warp's own configuration.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Checked first
+      options:
+        - label: The tab has no manual name (right-click the tab → rename → empty the field)
+          required: true
+        - label: "`printf '\\033]0;ZZZ-TEST\\007'` in a plain Warp tab does rename the tab"
+          required: true
+        - label: The tab was opened after `setup.sh` ran, or after the exports were added by hand
+          required: true
+        - label: "`jq` is installed (`command -v jq`)"
+          required: true
+
+  - type: input
+    id: expected
+    attributes:
+      label: What the title should have read
+      placeholder: "🟢 15:46 · Fix #2321"
+    validations:
+      required: true
+
+  - type: input
+    id: actual
+    attributes:
+      label: What it actually read
+      placeholder: "warp-claude-tab-clock — the project directory name"
+    validations:
+      required: true
+
+  - type: textarea
+    id: hook-output
+    attributes:
+      label: Output of the hook
+      description: "`./scripts/warp-tab-time.sh` — prints the JSON without touching the terminal."
+      render: json
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it is installed
+      options:
+        - Plugin, plus setup.sh for the shell side
+        - Plugin, with the .zshrc block added by hand
+        - v1 script install into settings.json
+        - Something else, described below
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Claude Code (`claude --version`), Warp, and this plugin.
+      placeholder: "Claude Code 2.1.141, Warp 2026.08, plugin 1.4.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: >
+        Other hooks or plugins that touch the title, a non-default
+        CLAUDE_CONFIG_DIR, a shell other than zsh — the things that would not
+        occur to us to ask about.

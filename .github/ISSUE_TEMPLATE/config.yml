@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Troubleshooting
+    url: https://github.com/Xoviec/warp-claude-tab-clock#troubleshooting
+    about: The title not changing is nearly always one of three things. Start here.
+  - name: Report a vulnerability
+    url: https://github.com/Xoviec/warp-claude-tab-clock/security/advisories/new
+    about: Privately, not as a public issue.
