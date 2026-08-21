@@ -1,0 +1,37 @@
+name: Idea
+description: Something the tab title should say, or say differently
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two things are known to be impossible and are not worth an issue: real
+        tab **colours** and renaming a tab through Warp's UI from a script.
+        Both are limits in Warp, not here —
+        [Limitations](https://github.com/Xoviec/warp-claude-tab-clock#limitations)
+        has the detail and the upstream links.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to see at a glance
+      description: >
+        The situation, not the feature. "I keep alt-tabbing to find which of six
+        sessions is blocked" says more than "add a badge".
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you think the title should do
+    validations:
+      required: true
+
+  - type: input
+    id: hook
+    attributes:
+      label: Which event would drive it
+      description: >
+        Optional. If you know the Claude Code hook this would hang off —
+        SessionStart, PreCompact, SubagentStop — name it.

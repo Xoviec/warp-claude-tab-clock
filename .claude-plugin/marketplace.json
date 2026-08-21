@@ -10,9 +10,9 @@
     {
       "name": "warp-tab-clock",
       "source": "./",
-      "description": "Live clock in the Warp tab title: the time Claude last replied, plus a label for the session",
+      "description": "Live clock in the Warp tab title: what the session is doing, since when, and what it is about",
       "category": "productivity",
-      "tags": ["warp", "terminal", "tab-title"]
+      "tags": ["warp", "terminal", "tab-title", "productivity"]
     }
   ]
 }

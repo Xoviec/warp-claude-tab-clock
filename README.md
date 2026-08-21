@@ -1,6 +1,11 @@
 # warp-tab-clock
 
-Puts a live clock in your Warp tab title while you work in Claude Code.
+[![test](https://github.com/Xoviec/warp-claude-tab-clock/actions/workflows/test.yml/badge.svg)](https://github.com/Xoviec/warp-claude-tab-clock/actions/workflows/test.yml)
+[![plugin](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FXoviec%2Fwarp-claude-tab-clock%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=plugin&color=blue)](.claude-plugin/plugin.json)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+Puts a live clock in your Warp tab title while you work in Claude Code, and a
+dot that says whose turn it is.
 
 ![Three Warp tabs, each with a coloured dot, a time and a label: red 15:42 · Code Review, yellow 15:44 · Review Issues, green 15:46 · say hello to community.](docs/tab-bar.png)
 
@@ -212,6 +217,24 @@ Saved names are not garbage-collected: `<state>` keeps one file per Warp tab you
 have ever used. `rm -rf ~/.claude/warp-tab-name` is safe at any time, and
 `./teardown.sh` does it for you.
 
+## Configuration
+
+Every option lives in `/plugin configure warp-tab-clock@xoviec`, and every one of
+them has an environment variable that works without the plugin. The two are
+independent, so either turns a feature off — collected here because the sections
+above introduce them one at a time.
+
+| Option | Default | Turn off with |
+|---|---|---|
+| Colour the tab by what the session is doing | on | `WARP_TAB_CLOCK_NO_STATE=1` |
+| Derive labels from the first prompt | on | `WARP_TAB_CLOCK_NO_AUTONAME=1` |
+| Let a model name the tab | on | `WARP_TAB_CLOCK_NO_LLM_NAME=1` |
+
+**Default tab label** is the fourth option and a value rather than a switch; a
+`<state>/default` file holds the same thing and takes priority over it. Two
+variables have no option at all: `WARP_TAB_CLOCK_LLM_MODEL` (default `haiku`) and
+`WARP_TAB_CLOCK_LLM_TIMEOUT` (default `25`, seconds).
+
 ## How it works
 
 Claude Code hooks, no daemon and no polling. `warp-tab-time.sh` resolves the
@@ -347,6 +370,14 @@ directory-based names back.
 ./tests/test-hooks.sh              # hooks, against a throwaway config dir
 claude plugin validate . --strict  # manifests
 ```
+
+The tests need only `bash` and `jq`, take no arguments, and never touch your real
+`~/.claude`. [CONTRIBUTING.md](CONTRIBUTING.md) has the constraints the hooks work
+under — the ones that are easy to break by accident — and
+[CHANGELOG.md](CHANGELOG.md) has what changed in each version.
+
+Issues and pull requests are welcome. What this plugin can reach on your machine,
+and what it sends where, is spelled out in [SECURITY.md](SECURITY.md).
 
 ## License
 

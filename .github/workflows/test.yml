@@ -28,6 +28,12 @@ jobs:
           for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json; do
             jq -e . "$f" > /dev/null && echo "ok  $f"
           done
+      - name: Issue forms are valid YAML
+        run: |
+          for f in .github/ISSUE_TEMPLATE/*.yml; do
+            python3 -c "import sys,yaml; yaml.safe_load(open(sys.argv[1]))" "$f" && echo "ok  $f"
+          done
+
       - name: Hook commands point at files that exist
         run: |
           jq -r '.hooks[][].hooks[].command' hooks/hooks.json \
